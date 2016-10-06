@@ -51,13 +51,14 @@ function git_config() {
 
   # try repo config first, then search defaults
   local i=0
-  git config "$1" 2>/dev/null || {
+  git config "$1" 2>/dev/null || (
+    set +x
     # try defaults (program defaults and command line)
     for ((i=0; i<${#DEFAULTS[@]}; i+=2)); do
       if [[ "${DEFAULTS[i]}" == "$1" ]]; then echo -n "${DEFAULTS[i+1]}"; return 0; fi
     done
     return 1
-  }
+  )
 }
 
 function git_config_bool() {
