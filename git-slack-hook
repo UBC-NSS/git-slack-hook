@@ -35,6 +35,9 @@ DEFAULTS=(
   #KEY                              #VALUE
   hooks.slack.show-only-last-commit "false"
   hooks.slack.show-full-commit      "false"
+
+
+  hooks.slack.log-prefix            "*** "
 )
 
 function git_config() {
@@ -130,10 +133,44 @@ function parse_record() {
   done
 }
 
+function user_log() {
+    # Log target visible to user doing the push.
+    #
+    # Usage 1: user_log "my message" "here"
+    # Usage 2: echo -e "line 1\nline2" | user_log
+
+    local prefix="$(git_config hooks.slack.log-prefix)"
+    local line
+
+    if [[ "$#" -gt 0 ]]; then
+      echo >&2 "${prefix}$*"
+      return
+    fi
+
+    while read line; do
+      echo >&2 "${prefix}${line}"
+    done
+}
+
 function notify() {
   oldrev=$(git rev-parse $1)
   newrev=$(git rev-parse $2)
   refname="$3"
+
+  webhook_url=$(git_config hooks.slack.webhook-url) || {
+      # webhook_url undefined.
+      (
+	  echo "Error: config settings not found"
+	  help
+      ) | user_log
+      exit 1
+  }
+
+  [[ -n "$webhook_url" ]] || {
+      # webhook_url defined, but empty.
+      # we assume the hook is disabled.
+      exit 0
+  }
 
   # --- Interpret
   # 0000->1234 (create)
@@ -195,14 +232,14 @@ function notify() {
       # tracking branch
       refname_type="tracking branch"
       short_refname=${refname##refs/remotes/}
-      echo >&2 "*** Push-update of tracking branch, $refname"
-      echo >&2 "***  - no notification generated."
+      user_log "Push-update of tracking branch, $refname"
+      user_log " - no notification generated."
       return 0
       ;;
     *)
       # Anything else (is there anything else?)
-      echo >&2 "*** Unknown type of update to $refname ($rev_type)"
-      echo >&2 "***  - no notification generated"
+      user_log "Unknown type of update to $refname ($rev_type)"
+      user_log " - no notification generated"
       return 0
       ;;
   esac
@@ -268,8 +305,8 @@ function notify() {
       ;;
     *)
       # most weird ... this should never happen
-      echo >&2 "*** Unknown type of update to $refname ($rev_type)"
-      echo >&2 "***  - notifications will probably screw up."
+      user_log "Unknown type of update to $refname ($rev_type)"
+      user_log " - notifications will probably screw up."
       ;;
   esac
 
@@ -371,17 +408,10 @@ function notify() {
 "text": '"$(json_string "${header}")"
   fi
 
-  webhook_url=$(git_config hooks.slack.webhook-url)
   channel=$(git_config hooks.slack.channel)
   username=$(git_config hooks.slack.username)
   iconurl=$(git_config hooks.slack.icon-url)
   iconemoji=$(git_config hooks.slack.icon-emoji)
-
-  if [ -z "$webhook_url" ]; then
-    echo "ERROR: config settings not found"
-    help
-    exit 1
-  fi
 
   payload="{${msg}"
 
@@ -401,8 +431,10 @@ function notify() {
   curl -s \
       --data-urlencode "payload=$payload" \
       "$webhook_url" \
-      >/dev/null
-
+      >/dev/null && {
+      # slack notified branch/tag *foo* updated/created/deleted
+      user_log "Sent nofification: ${refname_type} *${short_refname}* ${change_type}d"
+  }
 }
 
 while [[ "$#" -gt 0 ]]; do
