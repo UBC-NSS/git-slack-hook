@@ -87,10 +87,22 @@ function update_defaults() {
 }
 
 
-function replace_variables() {
-  sed "s|%repo_path%|$repopath|g;s|%old_rev_hash%|$oldrev|g;s|%new_rev_hash%|$newrev|g;s|%rev_hash%|$newrev|g;s|%repo_prefix%|$repoprefix|g"
-}
+function replace_variables () {
+  local s="$1"
+  shift
+  local subst=("$@")
+  local i=0
 
+  for ((i=0; i<"${#subst[@]}"; i+=2)); do
+    s="${s//${subst[i]}/${subst[i+1]}}"
+  done
+
+  #common ones
+  s="${s//%old_rev_hash%/${oldrev}}"
+  s="${s//%new_rev_hash%/${newrev}}"
+
+  echo "$s"
+}
 
 function json_string() {
   # takes care of special characters and unicode escapes. assumes
@@ -153,6 +165,58 @@ function user_log() {
     while read line; do
       echo >&2 "${prefix}${line}"
     done
+}
+
+function get_repopath() {
+  # prints a web path relative to the root directory
+  # this is the empty string if no root dir was defined.
+  local sub="$PWD"
+
+  if [[ -n "$reporoot" ]]; then
+    if [[ "$sub" == "${reporoot}"* ]]; then
+      if [[ "$(basename "$sub")" ==  ".git" ]]; then
+	sub=$(dirname "$PWD")
+      fi
+      echo -n "${sub:${#reporoot}}" # strip reporoot from path
+      return 0
+    fi
+    user_log "$PWD is not in $reporoot. Not creating hyperlinks."
+  fi
+  return 1
+}
+
+function make_changeset_link() {
+    # make_changeset_link LABEL REVHASH
+    # creates a slack link for the latest changeset <URL|LABEL>
+    local label=$1 revhash=$2
+    local changeseturlpattern=$(git_config hooks.slack.changeset-url-pattern)
+    local repopath=$(get_repopath)
+    local url=
+    if [[ -n "$repopath" && -n "$changeseturlpattern" ]]; then
+	url=$(
+	    replace_variables "$changeseturlpattern" \
+		%repo_path%     "$repopath" \
+		%rev_hash%      "$revhash"
+	)
+    fi
+    echo -n "<$url|$label>"
+}
+
+function make_compare_link() {
+    # make_compare_link LABEL
+    # creates a slack link for a single changeset <URL|LABEL>
+    local label=$1
+    local compareurlpattern=$(git_config hooks.slack.compare-url-pattern)
+    local repopath=$(get_repopath)
+    local url=
+
+    if [[ -n "$repopath" && -n "$compareurlpattern" ]]; then
+	url=$(
+	    replace_variables "$compareurlpattern" \
+		%repo_path%     "$repopath"
+	)
+    fi
+    echo "<$url|$label>"
 }
 
 function notify() {
@@ -274,6 +338,8 @@ function notify() {
   repoprefix=$(git_config hooks.slack.repo-nice-name || git_config hooks.irc.prefix || git_config hooks.emailprefix || echo "$repo")
   fullcommit=$(git_config_bool hooks.slack.show-full-commit)
   onlylast=$(git_config_bool hooks.slack.show-only-last-commit)
+  reporoot=$(git_config hooks.slack.repos-root)
+
 
   # Get the user information
   # If $GL_USER is set we're running under gitolite.
@@ -285,11 +351,13 @@ function notify() {
 
   case ${change_type} in
     "create")
-      header="New ${refname_type} *${short_refname}* has been created in ${repoprefix}"
+      num=0
+      header="${user} created ${refname_type} *${short_refname}* in ${repoprefix}"
       single_commit_suffix="commit"
       ;;
     "delete")
-      header="$(tr '[:lower:]' '[:upper:]' <<< ${refname_type:0:1})${refname_type:1} *$short_refname* has been deleted from ${repoprefix}"
+      num=0
+      header="%s" "${user} deleted ${refname_type} *$short_refname* from ${repoprefix}"
       single_commit_suffix="commit"
       ;;
     "update")
@@ -297,11 +365,11 @@ function notify() {
       branch=${3/refs\/heads\//}
 
       if [ ${num} -gt 1 ]; then
-        header="${num} new commits *pushed* to *${short_refname}* in ${repoprefix}"
+        header="${user} *pushed* $(make_compare_link "${num} new commits") to *${short_refname}* of ${repoprefix}"
         single_commit_suffix="one"
         s="s"
       else
-        header="A new commit has been *pushed* to *${short_refname}* in ${repoprefix}"
+        header="${user} *pushed* $(make_compare_link "a new commit") to *${short_refname}* of ${repoprefix}"
         single_commit_suffix="one"
       fi
 
@@ -319,40 +387,6 @@ function notify() {
 
 
   if [[ "${change_type}" != "delete" && "${refname_type}" == "branch" ]]; then
-    changeseturlpattern=$(git_config hooks.slack.changeset-url-pattern)
-    compareurlpattern=$(git_config hooks.slack.compare-url-pattern)
-    reporoot=$(git_config hooks.slack.repos-root)
-
-    urlformat=
-    if [ -n "$changeseturlpattern" -a -n "$reporoot" ]; then
-      if [[ "$PWD" == ${reporoot}* ]]; then
-        repopath=$PWD
-        base=$(basename "$PWD")
-        if [ "$base" == ".git" ]; then
-          repopath=$(dirname $repopath)
-        fi
-        idx=$(echo "$reporoot" | wc -c | tr -d ' ')
-        repopath=$(echo "$repopath" | cut -c$idx-)
-        urlformat=$(echo "$changeseturlpattern" | replace_variables)
-
-        if [ -n "$compareurlpattern" ]; then
-          comparelink=$(echo "$compareurlpattern" | replace_variables)
-	  # insert > after 'new commit(s)'.
-	  # we avoid using comparelink on replacement of sed call (because of possible &)
-          header=$(echo "$header" | sed -e "s|\([a-zA-Z0-9]\{1,\} new commit[s]\{0,1\}\)\(.*\)|\\1\>\\2|")
-	  header="<$comparelink|$header"
-        fi
-      else
-        echo >&2 "$PWD is not in $reporoot. Not creating hyperlinks."
-      fi
-    fi
-
-    formattedurl=""
-    if [ -n "$urlformat" ]; then
-      formattedurl="<${urlformat}|%h> "
-    fi
-
-
     nl="\\\\n"
 
     if [[ "${change_type}" == "update" ]]; then
@@ -379,7 +413,7 @@ function notify() {
     fi
 
     sep="boundary-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}--"
-    log_out=$(git log --pretty=format:"%cN${sep}${formattedurl}${commitformat}${sep}" $countarg "${start}..${end}")
+    log_out=$(git log --pretty=format:"%cN${sep}%h${sep}${commitformat}${sep}" $countarg "${start}..${end}")
     attachment_arr=()
     max_commits=$(git_config hooks.slack.max-commits-per-changeset)
     while [[ -n "${log_out}" ]]; do
@@ -390,9 +424,11 @@ function notify() {
       fi
 
       title=""
+      rev=""
       value=""
-      parse_record log_out "${sep}" title value
+      parse_record log_out "${sep}" title rev value
 
+      value="$(make_changeset_link "${rev}" "${rev}") $value"
       attachment_arr+=('
 {
   "fallback": "",

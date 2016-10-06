@@ -87,11 +87,18 @@ Other command line flags of interest:
 
 When the following parameters are set, revision hashes will be turned into links to a web view of your repository.
 
-    git config hooks.slack.repos-root '/path/to/repos'
+    git config hooks.slack.repos-root '/path/to/repos/'
     git config hooks.slack.changeset-url-pattern 'http://yourserver/%repo_path%/changeset/%rev_hash%'
 
-For example, if your repository is in `/usr/local/repos/myrepo`, set repos_root to `/usr/local/repos/` and set `changeset_url_pattern` to `http://yourserver/%repo_path%/changeset/%rev_hash%` or whatever.
+Make sure repos-root ends with a trailing slash. For example, if your repository is in `/usr/local/repos/myrepo`, set repos_root to `/usr/local/repos/` and set `changeset_url_pattern` to `http://yourserver/%repo_path%/changeset/%rev_hash%` or whatever.
 
 Links can also be created that summarize a list of commits:
 
     git config hooks.slack.compare-url-pattern 'http://yourserver/%repo_path%/compare/%old_rev_hash%..%new_rev_hash%'
+
+The following template parameters are available:
+
+    - `%old_rev_hash%`: in update notifications, the revision before the push.
+    - `%new_rev_hash%`: in update notifications, the revision after the push (i.e. the latest).
+    - `%rev_hash%`: in the changeset URL. the revision of a single commit.
+    - `%repo_path%`: the path of the repository, relative to the repository root.
