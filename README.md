@@ -26,6 +26,8 @@ Configure the webhook URL
 
     git config hooks.slack.webhook-url 'https://hooks.slack.com/services/...'
 
+    Note: _Notifications are disabled if this key is set to an empty value. The hook raises an error if this key is not set._
+
 ## Optional
 Specify a channel to post in Slack instead of the default:
 
