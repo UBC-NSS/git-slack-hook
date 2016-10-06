@@ -63,6 +63,23 @@ Specify if you want to send only certain branches:
 
     git config hooks.slack.branch-regexp regexp
 
+## Command line arguments
+
+Defaults suitable for multiple repositories can be configured on the command line with one or more `-c KEY VALUE` options. If you use central management for your repositories, you may wish to provide default global values by linking to a common hook script. 
+
+    #!/bin/bash
+    
+    path/to/git-slack-hook \
+      -c hooks.slack.webhook-url 'https://hooks.slack.com/same-hook-for-everyone' \
+      -c hooks.slack.channel '#general' \
+      -c some.other.key ''
+
+Configuration keys in repositories take precedence over those defined on the command line.
+
+Other command line flags of interest:
+
+    --debug  (prints, but doesn't send the notification. a dry run)
+    --trace  (allows debugging the script)
 
 ## Linking to Changesets
 
