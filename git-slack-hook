@@ -75,7 +75,7 @@ function update_defaults() {
   local i=0
   for ((i=0; i<${#DEFAULTS[@]}; i+=2)); do
     if [[ "${DEFAULTS[i]}" == "$1" ]]; then
-      DEFAULTS[i]="$2"
+      DEFAULTS[i+1]="$2"
       return 0
     fi
   done
