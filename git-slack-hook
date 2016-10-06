@@ -15,19 +15,21 @@
 #   https://my.slack.com/services/new/incoming-webhook
 #
 function help() {
-  echo "Required config settings:"
-  echo " git config hooks.slack.webhook-url 'https://hooks.slack.com/services/...'"
-  echo " git config hooks.slack.channel 'general'"
-  echo " git config hooks.slack.show-only-last-commit true #optional"
-  echo " git config hooks.slack.show-full-commit true #optional"
-  echo " git config hooks.slack.username 'git' #optional"
-  echo " git config hooks.slack.icon-url 'http://imgur/icon.png' #optional"
-  echo " git config hooks.slack.icon-emoji ':twisted_rightwards_arrows:' #optional"
-  echo " git config hooks.slack.repo-nice-name 'MyRepo' #optional"
-  echo " git config hooks.slack.repos-root '/path/to/repos' #optional"
-  echo " git config hooks.slack.changeset-url-pattern 'http://yourserver/%repo_path%/changeset/%rev_hash%' #optional"
-  echo " git config hooks.slack.compare-url-pattern 'http://yourserver/%repo_path%/changeset/%old_rev_hash%..%new_rev_hash%' #optional"
-  echo " git config hooks.slack.branch-regexp 'regexp'  #optional"
+  echo "Required config settings:
+ git config hooks.slack.webhook-url 'https://hooks.slack.com/services/...'
+ git config hooks.slack.channel 'general'
+ git config hooks.slack.show-only-last-commit true #optional
+ git config hooks.slack.show-full-commit true #optional
+ git config hooks.slack.username 'git' #optional
+ git config hooks.slack.icon-url 'http://imgur/icon.png' #optional
+ git config hooks.slack.icon-emoji ':twisted_rightwards_arrows:' #optional
+ git config hooks.slack.repo-nice-name 'MyRepo' #optional
+ git config hooks.slack.repos-root '/path/to/repos' #optional
+ git config hooks.slack.changeset-url-pattern 'http://yourserver/%repo_path%/changeset/%rev_hash%' #optional
+ git config hooks.slack.compare-url-pattern 'http://yourserver/%repo_path%/changeset/%old_rev_hash%..%new_rev_hash%' #optional
+ git config hooks.slack.branch-regexp 'regexp'  #optional
+ git config hooks.slack.max-commits-per-changeset '20' # slack displays 20 or so (rest are collapsed)
+"
 }
 
 # Per-Repo config override these defaults
@@ -36,7 +38,7 @@ DEFAULTS=(
   hooks.slack.show-only-last-commit "false"
   hooks.slack.show-full-commit      "false"
 
-
+  hooks.slack.max-commits-per-changeset "20"
   hooks.slack.log-prefix            "*** "
 )
 
@@ -378,7 +380,14 @@ function notify() {
     sep="boundary-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}--"
     log_out=$(git log --pretty=format:"%cN${sep}${formattedurl}${commitformat}${sep}" $countarg "${start}..${end}")
     attachment_arr=()
+    max_commits=$(git_config hooks.slack.max-commits-per-changeset)
     while [[ -n "${log_out}" ]]; do
+
+      # do not exceed limit
+      if [[ -n "$max_commits" && ( "${max_commits}" -le "${#attachment_arr[@]}" ) ]]; then
+	  break;
+      fi
+
       title=""
       value=""
       parse_record log_out "${sep}" title value
