@@ -487,7 +487,7 @@ while [[ "$#" -gt 0 ]]; do
   case "$1" in
     -h|--help)
       help
-      exit 1
+      exit 0
       ;;
     -c|--config)
       [[ "$#" -gt 2 ]] || { echo >&2 "Missing arguments: syntax is `--config <key> <value>`"; exit 1; }
@@ -511,10 +511,27 @@ done
 DEBUG="${DEBUG:-}"
 # MAIN PROGRAM
 # Read all refs from stdin, notify slack for each
+notify_count=0
+notify_errors=0
 while read line; do
   set -- $line
-  notify $*
-  RET=$?
+  let notify_count+=1
+  notify $* || { let notify_errors+=1; }
 done
 
-exit $RET
+if [[ "${notify_count}" -lt 1 ]]; then
+  # did not run a single time -- print help
+  (
+    echo "Nothing to do"
+    help
+  ) | user_log
+else
+  # output run summary
+  if [[ "${notify_errors}" -gt 0 ]]; then
+      user_log "Errors occurred sending notifications to slack."
+  else
+      user_log "Sent ${notify_count} notification(s)."
+  fi
+fi
+
+exit ${notify_errors}
