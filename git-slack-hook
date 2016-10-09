@@ -18,24 +18,23 @@ function help() {
   echo "Required config settings:
  git config hooks.slack.webhook-url 'https://hooks.slack.com/services/...'
  git config hooks.slack.channel 'general'
- git config hooks.slack.show-only-last-commit true #optional
  git config hooks.slack.show-full-commit true #optional
  git config hooks.slack.username 'git' #optional
  git config hooks.slack.icon-url 'http://imgur/icon.png' #optional
  git config hooks.slack.icon-emoji ':twisted_rightwards_arrows:' #optional
  git config hooks.slack.repo-nice-name 'MyRepo' #optional
  git config hooks.slack.repos-root '/path/to/repos' #optional
+ git config hooks.slack.branch-regexp 'regexp'  #optional
+ git config hooks.slack.max-commits-per-changeset '20'
+
  git config hooks.slack.changeset-url-pattern 'http://yourserver/%repo_path%/changeset/%rev_hash%' #optional
  git config hooks.slack.compare-url-pattern 'http://yourserver/%repo_path%/changeset/%old_rev_hash%..%new_rev_hash%' #optional
- git config hooks.slack.branch-regexp 'regexp'  #optional
- git config hooks.slack.max-commits-per-changeset '20' # slack displays 20 or so (rest are collapsed)
 "
 }
 
 # Per-Repo config override these defaults
 DEFAULTS=(
   #KEY                              #VALUE
-  hooks.slack.show-only-last-commit "false"
   hooks.slack.show-full-commit      "false"
 
   hooks.slack.max-commits-per-changeset "20"
@@ -337,7 +336,6 @@ function notify() {
 
   repoprefix=$(git_config hooks.slack.repo-nice-name || git_config hooks.irc.prefix || git_config hooks.emailprefix || echo "$repo")
   fullcommit=$(git_config_bool hooks.slack.show-full-commit)
-  onlylast=$(git_config_bool hooks.slack.show-only-last-commit)
   reporoot=$(git_config hooks.slack.repos-root)
 
 
@@ -397,13 +395,8 @@ function notify() {
 
     end="${2}"
 
-
-    # merge `git log` output with $header
-    if [[ "$onlylast" == true ]]; then
-      countarg="-n 1"
-    else
-      countarg=""
-    fi
+    max_commits=$(git_config hooks.slack.max-commits-per-changeset)
+    countarg="-n ${max_commits}"
 
     # show the full commit message
     if [ "$fullcommit" == "true" ]; then
