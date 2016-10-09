@@ -29,6 +29,13 @@ function help() {
 
  git config hooks.slack.changeset-url-pattern 'http://yourserver/%repo_path%/changeset/%rev_hash%' #optional
  git config hooks.slack.compare-url-pattern 'http://yourserver/%repo_path%/changeset/%old_rev_hash%..%new_rev_hash%' #optional
+
+ # Appearance templates
+ git config hooks.slack.msg-create      '$(git_config hooks.slack.msg-create)'
+ git config hooks.slack.msg-delete      '$(git_config hooks.slack.msg-delete)'
+ git config hooks.slack.msg-update-many '$(git_config hooks.slack.msg-update-many)'
+ git config hooks.slack.msg-update-one  '$(git_config hooks.slack.msg-update-one)'
+
 "
 }
 
@@ -36,9 +43,12 @@ function help() {
 DEFAULTS=(
   #KEY                              #VALUE
   hooks.slack.show-full-commit      "false"
-
   hooks.slack.max-commits-per-changeset "20"
   hooks.slack.log-prefix            "*** "
+  hooks.slack.msg-create            '*[%repo_name%]* %refname_type%/%short_refname% created -- %user_full%'
+  hooks.slack.msg-delete            '*[%repo_name%]* %refname_type%/%short_refname% deleted -- %user_full%'
+  hooks.slack.msg-update-many       '*[%repo_name%]* %refname_type%/%short_refname% updated (<comparelink>%num% new commits</comparelink>) -- %user_full%'
+  hooks.slack.msg-update-one        '*[%repo_name%]* %refname_type%/%short_refname% updated (<comparelink>1 new commit</comparelink>) -- %user_full%'
 )
 
 function git_config() {
@@ -99,7 +109,12 @@ function replace_variables () {
   #common ones
   s="${s//%old_rev_hash%/${oldrev}}"
   s="${s//%new_rev_hash%/${newrev}}"
-
+  s="${s//%short_refname%/${short_refname}}"
+  s="${s//%repo_name%/${repodisplay}}"
+  s="${s//%refname_type%/${refname_type}}"
+  s="${s//%num%/${num}}"
+  s="${s//%user%/${user}}"
+  s="${s//%user_full%/${user_full}}"
   echo "$s"
 }
 
@@ -218,6 +233,46 @@ function make_compare_link() {
     echo "<$url|$label>"
 }
 
+function get_sender_info() {
+  # get_sender_info SENDERCFG USERNAME
+  #
+  local sendercfg=$1 username=$2
+  local u= rest=
+
+  [[ -f "$sendercfg" ]] || return 1
+
+  while read u rest; do
+      if [[ -z "$u" || $u =~ ^[[:space:]]*# || $u != $username ]]; then
+	  continue
+      fi
+      echo "$rest"
+      return 0
+  done < "$sendercfg"
+  return 1
+}
+
+function get_envrepo() {
+  # gets the name of the repo based on the environment and $reporoot
+
+  local repodir=
+
+  # Repo name, either Gitolite or normal repo.
+  if [ -n "$GL_REPO" ]; then
+    # it's a gitolite repo
+    echo -n "$GL_REPO"
+  else
+    repodir=$(basename "$(pwd)")
+    if [ "$repodir" == ".git" ]; then
+      repodir=$(dirname "$PWD")
+      repodir=$(basename "$repodir")
+    fi
+    if [[ -n "$reporoot" && "$repodir" == "${reporoot}"* ]]; then
+	repodir="${repodir:${#reporoot}}" #subdir of reporoot
+    fi
+    echo -n "${repodir%.git}" # strip .git
+  fi
+}
+
 function notify() {
   oldrev=$(git rev-parse $1)
   newrev=$(git rev-parse $2)
@@ -282,12 +337,8 @@ function notify() {
       ;;
     refs/tags/*,tag)
       # annotated tag
-      refname_type="annotated tag"
+      refname_type="annotated-tag"
       short_refname=${refname##refs/tags/}
-      # change recipients
-      if [ -n "$announcerecipients" ]; then
-        recipients="$announcerecipients"
-      fi
       ;;
     refs/heads/*,commit)
       # branch
@@ -296,7 +347,7 @@ function notify() {
       ;;
     refs/remotes/*,commit)
       # tracking branch
-      refname_type="tracking branch"
+      refname_type="tracking-branch"
       short_refname=${refname##refs/remotes/}
       user_log "Push-update of tracking branch, $refname"
       user_log " - no notification generated."
@@ -320,57 +371,46 @@ function notify() {
   # plural suffix, default "", changed to "s" if commits > 1
   s=""
 
-  # Repo name, either Gitolite or normal repo.
-  if [ -n "$GL_REPO" ]; then
-    # it's a gitolite repo
-    repodir=$(basename "$(pwd)")
-    repo=$GL_REPO
-  else
-    repodir=$(basename "$(pwd)")
-    if [ "$repodir" == ".git" ]; then
-      repodir=$(dirname "$PWD")
-      repodir=$(basename "$repodir")
-    fi
-    repo=${repodir%.git}
-  fi
-
-  repoprefix=$(git_config hooks.slack.repo-nice-name || git_config hooks.irc.prefix || git_config hooks.emailprefix || echo "$repo")
-  fullcommit=$(git_config_bool hooks.slack.show-full-commit)
   reporoot=$(git_config hooks.slack.repos-root)
-
+  repodisplay=$(git_config hooks.slack.repo-nice-name || get_envrepo)
+  fullcommit=$(git_config_bool hooks.slack.show-full-commit)
 
   # Get the user information
   # If $GL_USER is set we're running under gitolite.
   if [ -n "$GL_USER" ]; then
     user=$GL_USER
+    sender_cfg=$(git_config hooks.slack.sender-cfg || echo "${GL_ADMINDIR}/conf/sender.cfg")
   else
     user=$USER
+    sender_cfg=$(git_config hooks.slack.sender-cfg)
+  fi
+
+  user_full=$(get_sender_info "$sender_cfg" "$user")
+  if [[ -z "$user_full" ]]; then
+    # couldn't get full name. still print something
+    user_full="$user"
   fi
 
   case ${change_type} in
     "create")
       num=0
-      header="${user} created ${refname_type} *${short_refname}* in ${repoprefix}"
-      single_commit_suffix="commit"
+      header="$(git_config hooks.slack.msg-create)"
       ;;
     "delete")
       num=0
-      header="%s" "${user} deleted ${refname_type} *$short_refname* from ${repoprefix}"
-      single_commit_suffix="commit"
+      header="$(git_config hooks.slack.msg-delete)"
       ;;
     "update")
       num=$(git log --pretty=oneline ${1}..${2}|wc -l|tr -d ' ')
       branch=${3/refs\/heads\//}
 
+      #$(make_compare_link "${num} new commits")
       if [ ${num} -gt 1 ]; then
-        header="${user} *pushed* $(make_compare_link "${num} new commits") to *${short_refname}* of ${repoprefix}"
-        single_commit_suffix="one"
+        header="$(git_config hooks.slack.msg-update-many)"
         s="s"
       else
-        header="${user} *pushed* $(make_compare_link "a new commit") to *${short_refname}* of ${repoprefix}"
-        single_commit_suffix="one"
+        header="$(git_config hooks.slack.msg-update-one)"
       fi
-
       ;;
     *)
       # most weird ... this should never happen
@@ -379,10 +419,21 @@ function notify() {
       ;;
   esac
 
-  if [[ "$onlylast" == true ]] && [[ "${change_type}" != "delete" ]]; then
-    header="$header, showing last $single_commit_suffix:"
-  fi
+  tag_s="<comparelink>"
+  tag_e="</comparelink>"
+  if [[ "$header" =~ "$tag_s"(.*)"$tag_e" ]]; then
+      label="${BASH_REMATCH[1]}"
+      header="${header//"${BASH_REMATCH[0]}"/%compare_link%}"
 
+      label=$(replace_variables "$label")
+      [[ -z "$label" ]] && { label="compare"; }
+
+      header=$(replace_variables "$header" \
+	  %compare_link% "$(make_compare_link "$label")"
+      )
+  else
+      header=$(replace_variables "$header")
+  fi
 
   if [[ "${change_type}" != "delete" && "${refname_type}" == "branch" ]]; then
     nl="\\\\n"
@@ -399,6 +450,7 @@ function notify() {
     countarg="-n ${max_commits}"
 
     # show the full commit message
+    # %s is subject, %n is newline, %b is body
     if [ "$fullcommit" == "true" ]; then
       commitformat="%s%n%n%b"
     else
@@ -406,45 +458,69 @@ function notify() {
     fi
 
     sep="boundary-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}-${RANDOM}--"
-    log_out=$(git log --pretty=format:"%cN${sep}%h${sep}${commitformat}${sep}" $countarg "${start}..${end}")
+    log_out=$(git log --pretty=format:"%aN${sep}%aE${sep}%ai${sep}%h${sep}${commitformat}${sep}" $countarg "${start}..${end}")
     attachment_arr=()
-    max_commits=$(git_config hooks.slack.max-commits-per-changeset)
-    while [[ -n "${log_out}" ]]; do
 
+    while [[ -n "${log_out}" ]]; do
       # do not exceed limit
-      if [[ -n "$max_commits" && ( "${max_commits}" -le "${#attachment_arr[@]}" ) ]]; then
-	  break;
+      if [[ -n "${max_commits}" && ( "${max_commits}" -le "${#attachment_arr[@]}" ) ]]; then
+        if [[ "${max_commits}" -gt 0 ]]; then
+          attachment_arr+=($'\x0a'"_... $(( num - ${#attachment_arr[@]} )) more_")
+        fi
+        break;
       fi
 
-      title=""
+      author_name=""
+      author_email=""
+      author_date=""
       rev=""
-      value=""
-      parse_record log_out "${sep}" title rev value
+      commit=""
+      parse_record log_out "${sep}" author_name author_email author_date rev commit
 
-      value="$(make_changeset_link "${rev}" "${rev}") $value"
-      attachment_arr+=('
-{
-  "fallback": "",
-  "color": "good",
-  "fields": [{
-    "title": '"$(json_string "$title")"',
-    "value": '"$(json_string "$value")"',
-    "short": false
-  }]
-}')
+      commit="$(echo "$commit")" # remove trailing newlines
+      changeset_link=$(make_changeset_link "${rev}" "${rev}")
+
+      if [[ -n "${author_email}" ]]; then
+	  author_display="${author_name} <${author_email}>"
+      else
+	  author_display="${author}"
+      fi
+
+      author_date=( $author_date )
+      author_date="${author_date[0]} [${author_date[1]} ${author_date[2]}]"
+
+      commitlines=()
+      while read LINE; do
+	  commitlines+=("${LINE}")
+      done < <(echo "$commit")
+
+      formatted_msg=$(
+	  ln=$'\x0a'
+	  echo -n "[${short_refname}] ${changeset_link}: ${commitlines[0]} *--* ${author_display} (${author_date})"
+
+	  if [[ "$fullcommit" == "true" && "${#commitlines[@]}" -gt 1 ]]; then
+	      echo -n "${ln}"'```'
+	      for ((i=0; i<${#commitlines[@]}; i++)); do
+		  echo -n "${ln}${commitlines[i]}"
+	      done
+	      echo -n '```'
+	  fi
+      )
+      attachment_arr+=("${formatted_msg}")
     done
-
-
   fi
 
   if [[ "${#attachment_arr[@]}" -gt 0 ]]; then
-    attachments="[ $( json_join "${attachment_arr[@]}" ) ]"
-    msg='
-"text": '"$(json_string "$header")"',
-"attachments": '"$attachments"
+    nl=$'\x0a'
+    attachments=$(
+	for ((i=0; i<=${#attachment_arr[@]}; i++)); do
+	    [[ $i -eq 0 ]] || echo -n "${nl}"
+	    echo -n "${attachment_arr[i]}";
+	done;
+    )
+    msg='"text": '"$(json_string "${header}${nl}${attachments}")"
   else
-    msg='
-"text": '"$(json_string "${header}")"
+    msg='"text": '"$(json_string "${header}")"
   fi
 
   channel=$(git_config hooks.slack.channel)
