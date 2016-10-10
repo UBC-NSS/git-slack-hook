@@ -45,6 +45,8 @@ function help() {
 "
 }
 
+VERSION=0.1.0
+
 # Per-Repo config override these defaults
 DEFAULTS=(
   #KEY                              #VALUE
@@ -572,6 +574,9 @@ while [[ "$#" -gt 0 ]]; do
     -d|--debug)
       DEBUG=1
       ;;
+    -V|--version)
+      echo "${VERSION}"
+      exit 1
     --trace)
       set -x
       ;;
