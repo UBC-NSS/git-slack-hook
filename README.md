@@ -9,7 +9,7 @@ understands creation/deletion/update, for branches, tags
 
 ## How to Install
 
-Download the latest release of [git-slack-hook](releases/latest) onto the server which hosts your git repo.
+Download the latest release of [git-slack-hook](/releases/latest) onto the server which hosts your git repo.
 
 _Note: some git repositories may be "bare". You'll know if your repo is bare or not by checking for a `.git` folder where your repo lives._
 
