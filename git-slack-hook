@@ -2,10 +2,16 @@
 #
 # Slack (slack.com) notification post-receive hook.
 #
+# Based on: https://github.com/chriseldredge/git-slack-hook
+#           Chris Eldredge http://chris.eldredge.io/
+#
 # Based on: https://github.com/joemiller/git-hooks Campfire notification post-receive hook. Author: Joe Miller
 # (http://joemiller.me)
 #
 # Based on post-receive.irc by Mikael Fridh <frimik@gmail.com> https://gist.github.com/1821358
+#
+# Based on https://wiki.icinga.org/display/community/GIT+Commit+Bot (BSD3)
+#         (https://github.com/ehamberg/simple-gitbot )  Erlend Hamberg: erlend α hamberg.no
 #
 # Settings needed:
 #  git config hooks.slack.webhook-url "https://hooks.slack.com/services/..."
