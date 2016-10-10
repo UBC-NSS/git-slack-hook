@@ -93,7 +93,7 @@ Truncate the notification message after a maximum number of commits:
 
     git config hooks.slack.max-commits-per-changeset 20
 
- > _Note: set to 0 to show just a summary (e.g. "user x pushed 3 commits"), 1 to show just the last commit. If some commits are truncated, there will be a note to that effect ._
+ > _Note: set to 0 to show just a summary (e.g. "user x pushed 3 commits"), set to 1 to show the summary + the most recent commit. If the number of commits in the changeset is higher than this value, output will be truncated, and there will be a note to that effect._
 
 Specify whether you want to show the body of the commit message as well as the title:
 
