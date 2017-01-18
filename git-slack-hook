@@ -2,6 +2,8 @@
 #
 # Slack (slack.com) notification post-receive hook.
 #
+# https://github.com/UBC-NSS/git-slack-hook
+#
 # Based on: https://github.com/chriseldredge/git-slack-hook
 #           Chris Eldredge http://chris.eldredge.io/
 #
@@ -194,7 +196,7 @@ function get_repopath() {
   # this is the empty string if no root dir was defined.
   local sub="$PWD"
 
-  if [[ -n "$reporoot" ]]; then
+  if [[ -n "${reporoot}" ]]; then
     if [[ "$sub" == "${reporoot}"* ]]; then
       if [[ "$(basename "$sub")" ==  ".git" ]]; then
 	sub=$(dirname "$PWD")
@@ -221,7 +223,12 @@ function make_changeset_link() {
 		%rev_hash%      "$revhash"
 	)
     fi
-    echo -n "<$url|$label>"
+
+    if [[ -n "${url}" ]]; then
+	echo -n "<${url}|${label}>"
+    else
+	echo -n "${label}"
+    fi
 }
 
 function make_compare_link() {
@@ -238,7 +245,12 @@ function make_compare_link() {
 		%repo_path%     "$repopath"
 	)
     fi
-    echo "<$url|$label>"
+
+    if [[ -n "${url}" ]]; then
+	echo -n "<${url}|${label}>"
+    else
+	echo -n "${label}"
+    fi
 }
 
 function get_sender_info() {
@@ -577,6 +589,7 @@ while [[ "$#" -gt 0 ]]; do
     -V|--version)
       echo "${VERSION}"
       exit 1
+      ;;
     --trace)
       set -x
       ;;
