@@ -47,7 +47,7 @@ function help() {
 "
 }
 
-VERSION=0.1.0
+VERSION=0.1.1
 
 # Per-Repo config override these defaults
 DEFAULTS=(
